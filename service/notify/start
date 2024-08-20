@@ -1,0 +1,6 @@
+#!/bin/sh
+
+for i in $(seq 100); do
+    notify-send "hello world $i" -t 5000
+    sleep 3
+done

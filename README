@@ -1,0 +1,8 @@
+kumi - suckmore init
+=====================
+
+An init should reap zombies. Based on suckless sinit[1] which is in turn based
+on Rich Felker's minimal init[2].
+
+[1] https://git.suckless.org/sinit/
+[2] https://gist.github.com/rofl0r/6168719

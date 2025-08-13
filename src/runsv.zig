@@ -3,23 +3,289 @@ const mem = std.mem;
 
 const USAGE = "usage: svrun dir\n";
 
+var selfpipe: [2]std.posix.fd_t = undefined;
+
+const State = enum { Down, Run, Finish };
+const Ctrl = enum { Noop, Term, Pause };
+const Want = enum { Up, Down, Exit };
+
+const svdir = struct {
+    pid: std.posix.pid_t,
+    state: State = .Down,
+    // ctrl: Ctrl = .Noop,
+    want: Want = .Up,
+    start: i64,
+    // int wstat;
+    // int fdlock;
+    // int fdcontrol;
+    // int fdcontrolwrite;
+    // int islog;
+};
+
+/// Precondition: must be executed from $YUZU_SERVICE_DIR
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{ .safety = true }){};
+    defer _ = gpa.deinit();
+    const a = gpa.allocator();
+
+    const cwd = try std.process.getCwdAlloc(a);
+    defer a.free(cwd);
+
+    if (std.posix.getenvZ("YUZU_SERVICE_DIR")) |service| {
+        if (!std.mem.eql(u8, cwd, service)) {
+            std.debug.print("warning: cwd ({s}) is not the same as service dir ({s})\n", .{ cwd, service });
+            try std.process.changeCurDir(service);
+        }
+    } else {
+        std.debug.print("warning: YUZU_SERVICE_DIR is not defined, lets hope this is the right dir.\n", .{});
+    }
+
     const argv = std.os.argv;
-    if (argv.len < 2) {
+    // const progname = mem.span(argv[0]);
+
+    if (argv.len != 2) {
         std.debug.print(USAGE, .{});
         return;
     }
 
     const dir = mem.span(argv[1]);
 
-    var buffer: [std.posix.PATH_MAX]u8 = undefined;
-    @memcpy(buffer[0..2], "./");
-    @memcpy(buffer[2 .. 2 + dir.len], dir);
-    @memcpy(buffer[2 + dir.len .. 2 + dir.len + 7], "/start\x00");
+    try std.process.changeCurDir(dir);
 
-    const args: [2]?[*:0]const u8 = .{ @ptrCast(&buffer), null };
+    const startpath = "./start";
+    const args: [2]?[*:0]const u8 = .{ @ptrCast(startpath.ptr), null };
 
-    return std.posix.execveZ(args[0].?, @ptrCast(&args), std.c.environ);
+    if (true)
+        return std.posix.execveZ(args[0].?, @ptrCast(&args), std.c.environ);
+
+    //   struct stat s;
+    //   int fd;
+    //   int r;
+    //   char buf[256];
+
+    selfpipe = try std.posix.pipe();
+    defer std.posix.close(selfpipe[0]);
+    defer std.posix.close(selfpipe[1]);
+
+    //   ndelay_on(selfpipe[0]);
+    //   ndelay_on(selfpipe[1]);
+
+    //   sig_block(sig_child);
+    //   sig_catch(sig_child, s_child);
+    //   sig_block(sig_term);
+    //   sig_catch(sig_term, s_term);
+
+    const svd: [2]svdir = undefined;
+    svd[0] = .{
+        .pid = 0,
+        .state = .Down,
+        .ctrl = .Noop,
+        .want = .Up,
+        // .islog =0,
+        .start = std.time.timestamp(),
+    };
+
+    //   svd[1].pid =0;
+
+    var s: std.os.linux.Stat = undefined;
+    if (std.os.linux.stat("down", &s) == 0) svd[0] = .Down; // todo: check != -1
+
+    //   if (stat("log", &s) == -1) {
+    //     if (errno != error_noent)
+    //       warn("unable to stat() ./log: ");
+    //   }
+    //   else {
+    //     if (! S_ISDIR(s.st_mode))
+    //       warnx("./log", 0, ": not a directory.");
+    //     else {
+    //       haslog =1;
+    //       svd[1].state =S_DOWN;
+    //       svd[1].ctrl =C_NOOP;
+    //       svd[1].want =W_UP;
+    //       svd[1].islog =1;
+    //       taia_now(&svd[1].start);
+    //       if (stat("log/down", &s) != -1)
+    //         svd[1].want =W_DOWN;
+    //       if (pipe(logpipe) == -1)
+    //         fatal("unable to create log pipe");
+    //       coe(logpipe[0]);
+    //       coe(logpipe[1]);
+    //     }
+    //   }
+
+    //   if (mkdir("supervise", 0700) == -1) {
+    //     if ((r =readlink("supervise", buf, 256)) != -1) {
+    //       if (r == 256)
+    //         fatalx("unable to readlink ./supervise: ", "name too long");
+    //       buf[r] =0;
+    //       mkdir(buf, 0700);
+    //     }
+    //     else {
+    //       if ((errno != ENOENT) && (errno != EINVAL))
+    //         fatal("unable to readlink ./supervise");
+    //     }
+    //   }
+
+    //   if ((svd[0].fdlock =open_append("supervise/lock")) == -1)
+    //     fatal("unable to open supervise/lock");
+    //   if (lock_exnb(svd[0].fdlock) == -1) fatal("unable to lock supervise/lock");
+    //   coe(svd[0].fdlock);
+
+    //   if (haslog) {
+    //     if (mkdir("log/supervise", 0700) == -1) {
+    //       if ((r =readlink("log/supervise", buf, 256)) != -1) {
+    //         if (r == 256)
+    //           fatalx("unable to readlink ./log/supervise: ", "name too long");
+    //         buf[r] =0;
+    //         if ((fd =open_read(".")) == -1)
+    //           fatal("unable to open current directory");
+    //         if (chdir("./log") == -1)
+    //           fatal("unable to change directory to ./log");
+    //         mkdir(buf, 0700);
+    //         if (fchdir(fd) == -1)
+    //           fatal("unable to change back to service directory");
+    //         close(fd);
+    //       }
+    //       else {
+    //         if ((errno != ENOENT) && (errno != EINVAL))
+    //           fatal("unable to readlink ./log/supervise");
+    //       }
+    //     }
+    //     if ((svd[1].fdlock =open_append("log/supervise/lock")) == -1)
+    //       fatal("unable to open log/supervise/lock");
+    //     if (lock_ex(svd[1].fdlock) == -1)
+    //       fatal("unable to lock log/supervise/lock");
+    //     coe(svd[1].fdlock);
+    //   }
+    //
+    //   fifo_make("supervise/control", 0600);
+    //   if (stat("supervise/control", &s) == -1)
+    //     fatal("unable to stat supervise/control");
+    //   if (!S_ISFIFO(s.st_mode))
+    //     fatalx("supervise/control exists but is not a fifo", "");
+    //   if ((svd[0].fdcontrol =open_read("supervise/control")) == -1)
+    //     fatal("unable to open supervise/control");
+    //   coe(svd[0].fdcontrol);
+    //   if ((svd[0].fdcontrolwrite =open_write("supervise/control")) == -1)
+    //     fatal("unable to open supervise/control");
+    //   coe(svd[0].fdcontrolwrite);
+    //   update_status(&svd[0]);
+    //   if (haslog) {
+    //     fifo_make("log/supervise/control", 0600);
+    //     if (stat("supervise/control", &s) == -1)
+    //       fatal("unable to stat log/supervise/control");
+    //     if (!S_ISFIFO(s.st_mode))
+    //       fatalx("log/supervise/control exists but is not a fifo", "");
+    //     if ((svd[1].fdcontrol =open_read("log/supervise/control")) == -1)
+    //       fatal("unable to open log/supervise/control");
+    //     coe(svd[1].fdcontrol);
+    //     if ((svd[1].fdcontrolwrite =open_write("log/supervise/control")) == -1)
+    //       fatal("unable to open log/supervise/control");
+    //     coe(svd[1].fdcontrolwrite);
+    //     update_status(&svd[1]);
+    //   }
+    //   fifo_make("supervise/ok",0600);
+    //   if ((fd =open_read("supervise/ok")) == -1)
+    //     fatal("unable to read supervise/ok");
+    //   coe(fd);
+    //   if (haslog) {
+    //     fifo_make("log/supervise/ok",0600);
+    //     if ((fd =open_read("log/supervise/ok")) == -1)
+    //       fatal("unable to read log/supervise/ok");
+    //     coe(fd);
+    //   }
+
+    while (true) {
+        var x: [3]std.posix.pollfd = undefined;
+        //     iopause_fd x[3];
+        //     struct taia deadline;
+        //     struct taia now;
+        //     char ch;
+        //
+        //     if (haslog)
+        //       if (! svd[1].pid && (svd[1].want == W_UP)) startservice(&svd[1]);
+        if (svd[0].pid == 0)
+            if ((svd[0].want == .UP) or (svd[0].state == .FINISH))
+                startservice(&svd[0]);
+
+        x[0] = .{ .fd = selfpipe[0], .events = std.posix.POLL.IN };
+        //     x[1].fd =svd[0].fdcontrol;
+        //     x[1].events =IOPAUSE_READ;
+        //     if (haslog) {
+        //       x[2].fd =svd[1].fdcontrol;
+        //       x[2].events =IOPAUSE_READ;
+        //     }
+        //     taia_now(&now);
+        //     taia_uint(&deadline, 3600);
+        //     taia_add(&deadline, &now, &deadline);
+        //
+        //     sig_unblock(sig_term);
+        //     sig_unblock(sig_child);
+        std.posix.poll(x[0..2], 3600);
+        //     iopause(x, 2 +haslog, &deadline, &now);
+        //     sig_block(sig_term);
+        //     sig_block(sig_child);
+        //
+        //     while (read(selfpipe[0], &ch, 1) == 1)
+        //       ;
+        //     for (;;) {
+        //       int child;
+        //       int wstat;
+        //
+        //       child =wait_nohang(&wstat);
+        //       if (!child) break;
+        //       if ((child == -1) && (errno != error_intr)) break;
+        //       if (child == svd[0].pid) {
+        //         svd[0].pid =0;
+        //         pidchanged =1;
+        //         svd[0].wstat =wstat;
+        //         svd[0].ctrl &=~C_TERM;
+        //         if (svd[0].state != S_FINISH)
+        //           if ((fd =open_read("finish")) != -1) {
+        //             close(fd);
+        //             svd[0].state =S_FINISH;
+        //             update_status(&svd[0]);
+        //             continue;
+        //           }
+        //         svd[0].state =S_DOWN;
+        //         taia_uint(&deadline, 1);
+        //         taia_add(&deadline, &svd[0].start, &deadline);
+        //         taia_now(&svd[0].start);
+        //         update_status(&svd[0]);
+        //         if (taia_less(&svd[0].start, &deadline)) sleep(1);
+        //       }
+        //       if (haslog) {
+        //         if (child == svd[1].pid) {
+        //           svd[1].pid =0;
+        //           pidchanged =1;
+        //           svd[1].state =S_DOWN;
+        //           svd[1].ctrl &=~C_TERM;
+        //           taia_uint(&deadline, 1);
+        //           taia_add(&deadline, &svd[1].start, &deadline);
+        //           taia_now(&svd[1].start);
+        //           update_status(&svd[1]);
+        //           if (taia_less(&svd[1].start, &deadline)) sleep(1);
+        //         }
+        //       }
+        //     }
+        //     if (read(svd[0].fdcontrol, &ch, 1) == 1) ctrl(&svd[0], ch);
+        //     if (haslog)
+        //       if (read(svd[1].fdcontrol, &ch, 1) == 1) ctrl(&svd[1], ch);
+        //
+        //     if (sigterm) { ctrl(&svd[0], 'x'); sigterm =0; }
+        //
+        //     if ((svd[0].want == W_EXIT) && (svd[0].state == S_DOWN)) {
+        //       if (svd[1].pid == 0) _exit(0);
+        //       if (svd[1].want != W_EXIT) {
+        //         svd[1].want =W_EXIT;
+        //         /* stopservice(&svd[1]); */
+        //         update_status(&svd[1]);
+        //         if (close(logpipe[1]) == -1) warn("unable to close logpipe[1]");
+        //         if (close(logpipe[0]) == -1) warn("unable to close logpipe[0]");
+        //       }
+        //     }
+    }
+    //   _exit(0);
 }
 
 // #include <sys/types.h>
@@ -49,34 +315,8 @@ pub fn main() !void {
 // #define VERSION "$Id: ecf467746d7b97ff0fddb88b9d44cca201c74160 $"
 //
 // char *progname;
-// int selfpipe[2];
 //
-// /* state */
-// #define S_DOWN 0
-// #define S_RUN 1
-// #define S_FINISH 2
-// /* ctrl */
-// #define C_NOOP 0
-// #define C_TERM 1
-// #define C_PAUSE 2
-// /* want */
-// #define W_UP 0
-// #define W_DOWN 1
-// #define W_EXIT 2
 //
-// struct svdir {
-//   int pid;
-//   int state;
-//   int ctrl;
-//   int want;
-//   struct taia start;
-//   int wstat;
-//   int fdlock;
-//   int fdcontrol;
-//   int fdcontrolwrite;
-//   int islog;
-// };
-// struct svdir svd[2];
 //
 // int sigterm =0;
 // int haslog =0;
@@ -229,6 +469,7 @@ pub fn main() !void {
 //   if (rename(fstatusnew, fstatus) == -1)
 //     warn2("unable to rename status.new to ", fstatus);
 // }
+
 // unsigned int custom(struct svdir *s, char c) {
 //   int pid;
 //   int w;
@@ -267,6 +508,7 @@ pub fn main() !void {
 //   }
 //   return(0);
 // }
+
 // void stopservice(struct svdir *s) {
 //   if (s->pid && ! custom(s, 't')) {
 //     kill(s->pid, SIGTERM);
@@ -283,66 +525,67 @@ pub fn main() !void {
 //   }
 // }
 //
-// void startservice(struct svdir *s) {
-//   int p;
-//   char *run[4];
-//   char code[FMT_ULONG];
-//   char stat[FMT_ULONG];
-//
-//   if (s->state == S_FINISH) {
-//     run[0] ="./finish";
-//     code[fmt_ulong(code, wait_exitcode(s->wstat))] =0;
-//     run[1] =wait_crashed(s->wstat) ? "-1" : code;
-//     stat[fmt_ulong(stat, s->wstat & 0xff)] =0;
-//     run[2] =stat;
-//     run[3] =0;
-//   }
-//   else {
-//     run[0] ="./run";
-//     custom(s, 'u');
-//     run[1] =0;
-//   }
-//
-//   if (s->pid != 0) stopservice(s); /* should never happen */
-//   while ((p =fork()) == -1) {
-//     warn("unable to fork, sleeping");
-//     sleep(5);
-//   }
-//   if (p == 0) {
-//     /* child */
-//     if (haslog) {
-//       if (s->islog) {
-//         if (fd_copy(0, logpipe[0]) == -1)
-//           fatal("unable to setup filedescriptor for ./log/run");
-//         close(logpipe[1]);
-//         if (chdir("./log") == -1)
-//           fatal("unable to change directory to ./log");
-//       }
-//       else {
-//         if (fd_copy(1, logpipe[1]) == -1)
-//           fatal("unable to setup filedescriptor for ./run");
-//         close(logpipe[0]);
-//       }
-//     }
-//     sig_uncatch(sig_child);
-//     sig_unblock(sig_child);
-//     sig_uncatch(sig_term);
-//     sig_unblock(sig_term);
-//     execve(*run, run, environ);
-//     if (s->islog)
-//       fatal2("unable to start log/", *run);
-//     else
-//       fatal2("unable to start ", *run);
-//   }
-//   if (s->state != S_FINISH) {
-//     taia_now(&s->start);
-//     s->state =S_RUN;
-//   }
-//   s->pid =p;
-//   pidchanged =1;
-//   s->ctrl =C_NOOP;
-//   update_status(s);
-// }
+
+fn startservice(s: *svdir) void {
+    //   int p;
+    //   char *run[4];
+    //   char code[FMT_ULONG];
+    //   char stat[FMT_ULONG];
+
+    if (s.state == .Finish) {
+        //     run[0] ="./finish";
+        //     code[fmt_ulong(code, wait_exitcode(s->wstat))] =0;
+        //     run[1] =wait_crashed(s->wstat) ? "-1" : code;
+        //     stat[fmt_ulong(stat, s->wstat & 0xff)] =0;
+        //     run[2] =stat;
+        //     run[3] =0;
+    } else {
+        //     run[0] ="./run";
+        //     custom(s, 'u');
+        //     run[1] =0;
+    }
+
+    //   if (s->pid != 0) stopservice(s); /* should never happen */
+    //   while ((p =fork()) == -1) {
+    //     warn("unable to fork, sleeping");
+    //     sleep(5);
+    //   }
+    //   if (p == 0) {
+    //     /* child */
+    //     if (haslog) {
+    //       if (s->islog) {
+    //         if (fd_copy(0, logpipe[0]) == -1)
+    //           fatal("unable to setup filedescriptor for ./log/run");
+    //         close(logpipe[1]);
+    //         if (chdir("./log") == -1)
+    //           fatal("unable to change directory to ./log");
+    //       }
+    //       else {
+    //         if (fd_copy(1, logpipe[1]) == -1)
+    //           fatal("unable to setup filedescriptor for ./run");
+    //         close(logpipe[0]);
+    //       }
+    //     }
+    //     sig_uncatch(sig_child);
+    //     sig_unblock(sig_child);
+    //     sig_uncatch(sig_term);
+    //     sig_unblock(sig_term);
+    //     execve(*run, run, environ);
+    //     if (s->islog)
+    //       fatal2("unable to start log/", *run);
+    //     else
+    //       fatal2("unable to start ", *run);
+    //   }
+    //   if (s->state != S_FINISH) {
+    //     taia_now(&s->start);
+    //     s->state =S_RUN;
+    //   }
+    //   s->pid =p;
+    //   pidchanged =1;
+    //   s->ctrl =C_NOOP;
+    //   update_status(s);
+}
+
 // int ctrl(struct svdir *s, char c) {
 //   switch(c) {
 //   case 'd': /* down */
@@ -403,229 +646,4 @@ pub fn main() !void {
 //     break;
 //   }
 //   return(1);
-// }
-//
-// int main(int argc, char **argv) {
-//   struct stat s;
-//   int fd;
-//   int r;
-//   char buf[256];
-//
-//   progname =argv[0];
-//   if (! argv[1] || argv[2]) usage();
-//   dir =argv[1];
-//
-//   if (pipe(selfpipe) == -1) fatal("unable to create selfpipe");
-//   coe(selfpipe[0]);
-//   coe(selfpipe[1]);
-//   ndelay_on(selfpipe[0]);
-//   ndelay_on(selfpipe[1]);
-//
-//   sig_block(sig_child);
-//   sig_catch(sig_child, s_child);
-//   sig_block(sig_term);
-//   sig_catch(sig_term, s_term);
-//
-//   if (chdir(dir) == -1) fatal("unable to change to directory");
-//   svd[0].pid =0;
-//   svd[0].state =S_DOWN;
-//   svd[0].ctrl =C_NOOP;
-//   svd[0].want =W_UP;
-//   svd[0].islog =0;
-//   svd[1].pid =0;
-//   taia_now(&svd[0].start);
-//   if (stat("down", &s) != -1) svd[0].want =W_DOWN;
-//
-//   if (stat("log", &s) == -1) {
-//     if (errno != error_noent)
-//       warn("unable to stat() ./log: ");
-//   }
-//   else {
-//     if (! S_ISDIR(s.st_mode))
-//       warnx("./log", 0, ": not a directory.");
-//     else {
-//       haslog =1;
-//       svd[1].state =S_DOWN;
-//       svd[1].ctrl =C_NOOP;
-//       svd[1].want =W_UP;
-//       svd[1].islog =1;
-//       taia_now(&svd[1].start);
-//       if (stat("log/down", &s) != -1)
-//         svd[1].want =W_DOWN;
-//       if (pipe(logpipe) == -1)
-//         fatal("unable to create log pipe");
-//       coe(logpipe[0]);
-//       coe(logpipe[1]);
-//     }
-//   }
-//
-//   if (mkdir("supervise", 0700) == -1) {
-//     if ((r =readlink("supervise", buf, 256)) != -1) {
-//       if (r == 256)
-//         fatalx("unable to readlink ./supervise: ", "name too long");
-//       buf[r] =0;
-//       mkdir(buf, 0700);
-//     }
-//     else {
-//       if ((errno != ENOENT) && (errno != EINVAL))
-//         fatal("unable to readlink ./supervise");
-//     }
-//   }
-//   if ((svd[0].fdlock =open_append("supervise/lock")) == -1)
-//     fatal("unable to open supervise/lock");
-//   if (lock_exnb(svd[0].fdlock) == -1) fatal("unable to lock supervise/lock");
-//   coe(svd[0].fdlock);
-//   if (haslog) {
-//     if (mkdir("log/supervise", 0700) == -1) {
-//       if ((r =readlink("log/supervise", buf, 256)) != -1) {
-//         if (r == 256)
-//           fatalx("unable to readlink ./log/supervise: ", "name too long");
-//         buf[r] =0;
-//         if ((fd =open_read(".")) == -1)
-//           fatal("unable to open current directory");
-//         if (chdir("./log") == -1)
-//           fatal("unable to change directory to ./log");
-//         mkdir(buf, 0700);
-//         if (fchdir(fd) == -1)
-//           fatal("unable to change back to service directory");
-//         close(fd);
-//       }
-//       else {
-//         if ((errno != ENOENT) && (errno != EINVAL))
-//           fatal("unable to readlink ./log/supervise");
-//       }
-//     }
-//     if ((svd[1].fdlock =open_append("log/supervise/lock")) == -1)
-//       fatal("unable to open log/supervise/lock");
-//     if (lock_ex(svd[1].fdlock) == -1)
-//       fatal("unable to lock log/supervise/lock");
-//     coe(svd[1].fdlock);
-//   }
-//
-//   fifo_make("supervise/control", 0600);
-//   if (stat("supervise/control", &s) == -1)
-//     fatal("unable to stat supervise/control");
-//   if (!S_ISFIFO(s.st_mode))
-//     fatalx("supervise/control exists but is not a fifo", "");
-//   if ((svd[0].fdcontrol =open_read("supervise/control")) == -1)
-//     fatal("unable to open supervise/control");
-//   coe(svd[0].fdcontrol);
-//   if ((svd[0].fdcontrolwrite =open_write("supervise/control")) == -1)
-//     fatal("unable to open supervise/control");
-//   coe(svd[0].fdcontrolwrite);
-//   update_status(&svd[0]);
-//   if (haslog) {
-//     fifo_make("log/supervise/control", 0600);
-//     if (stat("supervise/control", &s) == -1)
-//       fatal("unable to stat log/supervise/control");
-//     if (!S_ISFIFO(s.st_mode))
-//       fatalx("log/supervise/control exists but is not a fifo", "");
-//     if ((svd[1].fdcontrol =open_read("log/supervise/control")) == -1)
-//       fatal("unable to open log/supervise/control");
-//     coe(svd[1].fdcontrol);
-//     if ((svd[1].fdcontrolwrite =open_write("log/supervise/control")) == -1)
-//       fatal("unable to open log/supervise/control");
-//     coe(svd[1].fdcontrolwrite);
-//     update_status(&svd[1]);
-//   }
-//   fifo_make("supervise/ok",0600);
-//   if ((fd =open_read("supervise/ok")) == -1)
-//     fatal("unable to read supervise/ok");
-//   coe(fd);
-//   if (haslog) {
-//     fifo_make("log/supervise/ok",0600);
-//     if ((fd =open_read("log/supervise/ok")) == -1)
-//       fatal("unable to read log/supervise/ok");
-//     coe(fd);
-//   }
-//   for (;;) {
-//     iopause_fd x[3];
-//     struct taia deadline;
-//     struct taia now;
-//     char ch;
-//
-//     if (haslog)
-//       if (! svd[1].pid && (svd[1].want == W_UP)) startservice(&svd[1]);
-//     if (! svd[0].pid)
-//       if ((svd[0].want == W_UP) || (svd[0].state == S_FINISH))
-//         startservice(&svd[0]);
-//
-//     x[0].fd =selfpipe[0];
-//     x[0].events =IOPAUSE_READ;
-//     x[1].fd =svd[0].fdcontrol;
-//     x[1].events =IOPAUSE_READ;
-//     if (haslog) {
-//       x[2].fd =svd[1].fdcontrol;
-//       x[2].events =IOPAUSE_READ;
-//     }
-//     taia_now(&now);
-//     taia_uint(&deadline, 3600);
-//     taia_add(&deadline, &now, &deadline);
-//
-//     sig_unblock(sig_term);
-//     sig_unblock(sig_child);
-//     iopause(x, 2 +haslog, &deadline, &now);
-//     sig_block(sig_term);
-//     sig_block(sig_child);
-//
-//     while (read(selfpipe[0], &ch, 1) == 1)
-//       ;
-//     for (;;) {
-//       int child;
-//       int wstat;
-//
-//       child =wait_nohang(&wstat);
-//       if (!child) break;
-//       if ((child == -1) && (errno != error_intr)) break;
-//       if (child == svd[0].pid) {
-//         svd[0].pid =0;
-//         pidchanged =1;
-//         svd[0].wstat =wstat;
-//         svd[0].ctrl &=~C_TERM;
-//         if (svd[0].state != S_FINISH)
-//           if ((fd =open_read("finish")) != -1) {
-//             close(fd);
-//             svd[0].state =S_FINISH;
-//             update_status(&svd[0]);
-//             continue;
-//           }
-//         svd[0].state =S_DOWN;
-//         taia_uint(&deadline, 1);
-//         taia_add(&deadline, &svd[0].start, &deadline);
-//         taia_now(&svd[0].start);
-//         update_status(&svd[0]);
-//         if (taia_less(&svd[0].start, &deadline)) sleep(1);
-//       }
-//       if (haslog) {
-//         if (child == svd[1].pid) {
-//           svd[1].pid =0;
-//           pidchanged =1;
-//           svd[1].state =S_DOWN;
-//           svd[1].ctrl &=~C_TERM;
-//           taia_uint(&deadline, 1);
-//           taia_add(&deadline, &svd[1].start, &deadline);
-//           taia_now(&svd[1].start);
-//           update_status(&svd[1]);
-//           if (taia_less(&svd[1].start, &deadline)) sleep(1);
-//         }
-//       }
-//     }
-//     if (read(svd[0].fdcontrol, &ch, 1) == 1) ctrl(&svd[0], ch);
-//     if (haslog)
-//       if (read(svd[1].fdcontrol, &ch, 1) == 1) ctrl(&svd[1], ch);
-//
-//     if (sigterm) { ctrl(&svd[0], 'x'); sigterm =0; }
-//
-//     if ((svd[0].want == W_EXIT) && (svd[0].state == S_DOWN)) {
-//       if (svd[1].pid == 0) _exit(0);
-//       if (svd[1].want != W_EXIT) {
-//         svd[1].want =W_EXIT;
-//         /* stopservice(&svd[1]); */
-//         update_status(&svd[1]);
-//         if (close(logpipe[1]) == -1) warn("unable to close logpipe[1]");
-//         if (close(logpipe[0]) == -1) warn("unable to close logpipe[0]");
-//       }
-//     }
-//   }
-//   _exit(0);
 // }

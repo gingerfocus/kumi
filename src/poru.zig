@@ -1,7 +1,5 @@
 const std = @import("std");
 
-// pub const std_options: std.Options = .{};
-
 const sys = std.os.linux;
 const mem = std.mem;
 
@@ -91,8 +89,7 @@ fn runsv(srv: *SvInfo, name: []const u8) !void {
     srv.pid = pid;
 }
 
-fn runsvdir(root: [*:0]const u8) !void {
-    _ = root; // autofix
+fn runsvdir() !void {
     var dir = try std.fs.cwd().openDir(".", .{ .iterate = true });
     defer dir.close();
 
@@ -275,7 +272,8 @@ pub fn main() !u8 {
 
                     // std.posix.nanosleep(1, 0);
 
-                    try runsvdir(svdir);
+                    std.debug.print("svdir: {s}\n", .{mem.span(svdir)});
+                    try runsvdir();
 
                     try std.posix.chdirZ(curdir); // TODO: retry after delay
                 }

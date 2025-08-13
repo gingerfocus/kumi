@@ -53,15 +53,10 @@ pub fn main() void {
         \\
     , .{});
     if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace.*);
-    // std.process.abort();
-    return;
+    std.process.abort();
 }
 
-// const SinitError = error{NotRoot};
-
 fn kumi() void {
-    var __r: u32 = 0; // unused
-
     std.posix.chdirZ("/") catch |err| switch (err) {
         // OOM, try again after backoff
         error.SystemResources => return,
@@ -93,7 +88,7 @@ fn kumi() void {
             // reap
             SIG.CHLD, SIG.ALRM => {
                 // clean up whatever mess is finished
-                _ = sys.waitpid(-1, &__r, sys.W.NOHANG);
+                _ = std.posix.waitpid(-1, std.posix.W.NOHANG);
             },
             // reboot
             SIG.INT => _ = spawn(config.rcrebootcmd, &set),

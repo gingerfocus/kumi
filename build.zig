@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
         },
     };
 
-    const config = b.addModule("config", .{ .root_source_file = b.path("config/config.zig") });
+    const config = b.addModule("config", .{ .root_source_file = b.path("config.zig") });
 
     for (items) |item| {
         const exe = b.addExecutable(.{
@@ -54,3 +54,42 @@ pub fn build(b: *std.Build) void {
     // const tests = b.step("test", "Run unit tests");
     // tests.dependOn(&run_unit_tests.step);
 }
+
+// const Env = struct {
+//     step: std.Build.Step,
+//     output: std.Build.LazyPath,
+//
+//     pub fn module() *std.Build.Module {
+//         @panic("TOOD");
+//     }
+// };
+//
+// pub fn addEnvStep(b: *std.Build, name: []const u8) *Env {
+//     _ = name;
+//
+//     // b.getInstallStep().dependOn()
+//     // b.addSystemCommand()
+//
+//     const env = b.allocator.create(Env) catch @panic("OOM");
+//     env.* = .{
+//         .step = .init(.{}),
+//         .outputfile = .{
+//             // .generated =
+//         },
+//     };
+//     return env;
+// }
+//
+//     // ------------------------------------------------------------------------
+//
+//     const env = addEnvStep(b);
+//     env.add("username", "SS_USERNAME");
+//     env.add("password", "SS_PASSWORD");
+//     // env.add("hunterapi", "HUNTER_API");
+//
+//     // const env = std.process.getEnvMap(b.allocator) catch {};
+//     // defer env.deinit();
+//     // env.get()
+//     // b.addOptions()
+//     adc.addImport("env", env.module());
+//

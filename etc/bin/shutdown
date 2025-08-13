@@ -1,0 +1,12 @@
+#!/bin/sh
+
+case $1
+    "reboot")
+        kill -s INT 1
+        ;;
+    "poweroff")
+        kill -s USR1 1
+        ;;
+    *)
+        ;;
+esac

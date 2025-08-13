@@ -22,7 +22,7 @@ const svdir = struct {
     // int islog;
 };
 
-/// Precondition: must be executed from $YUZU_SERVICE_DIR
+/// Precondition: must be executed from $KUMI_SERVICE_DIR
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{ .safety = true }){};
     defer _ = gpa.deinit();

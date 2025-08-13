@@ -169,7 +169,7 @@ fn sig_catch(sig: u6, f: ?*const fn (i32) callconv(.C) void) void {
         .mask = std.posix.empty_sigset,
     };
 
-    std.posix.sigaction(sig, &sa, null) catch unreachable;
+    std.posix.sigaction(sig, &sa, null);
 }
 
 pub fn main() !u8 {
@@ -262,10 +262,10 @@ pub fn main() !u8 {
 
             var s: sys.Stat = undefined;
             if (sys.stat(svdir, &s) == 0) {
-                if (check != 0 or s.mtime().tv_sec != mtime or s.ino != ino or s.dev != dev) {
+                if (check != 0 or s.mtime().sec != mtime or s.ino != ino or s.dev != dev) {
                     try std.posix.chdirZ(svdir);
 
-                    mtime = s.mtime().tv_sec;
+                    mtime = s.mtime().sec;
                     dev = s.dev;
                     ino = s.ino;
                     check = 0;
